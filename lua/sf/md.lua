@@ -238,8 +238,18 @@ H.list_md_type_to_retrieve = function()
   require("fzf-lua").fzf_exec(md_types, {
     actions = {
       ["default"] = function(selected)
-        H.retrieve_md_type(selected[1])
+        if #selected == 1 then
+          H.retrieve_md_type(selected[1])
+        else
+          H.retrieve_md_type_multi(selected, function()
+            local count = #selected
+            U.show(string.format("Retrieved %d metadata type%s", count, count > 1 and "s" or ""))
+          end)
+        end
       end,
+    },
+    fzf_opts = {
+      ["--multi"] = true,
     },
   })
 end
@@ -256,6 +266,26 @@ H.retrieve_md_type = function(type)
   -- local cmd = string.format('sf project retrieve start -m \'%s:*\' -o %s', type, U.target_org)
   local cmd = B:new():cmd("project"):act("retrieve start"):addParams("-m", type):build()
   T.run(cmd)
+end
+
+---Retrieve multiple metadata types in a single command
+---@param types table Array of metadata type strings
+---@param cb function|nil Optional callback after retrieval
+---@return nil
+H.retrieve_md_type_multi = function(types, cb)
+  if U.is_empty_str(U.target_org) then
+    return U.show_err("Target_org empty!")
+  end
+  U.get_sf_root()
+
+  local m_params = {}
+  for _, type in ipairs(types) do
+    table.insert(m_params, string.format('-m "%s"', type))
+  end
+  local m_param_str = table.concat(m_params, " ")
+
+  local cmd = B:new():cmd("project"):act("retrieve start"):addParamStr(m_param_str):build()
+  T.run(cmd, cb)
 end
 
 ---@param name string
