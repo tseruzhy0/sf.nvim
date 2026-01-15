@@ -79,6 +79,28 @@ H.retrieve_md = function(type, name, cb)
   T.run(cmd, cb)
 end
 
+---Retrieve multiple metadata items in a single command
+---@param items table Array of {type: string, name: string} objects
+---@param cb function|nil Optional callback after retrieval
+---@return nil
+H.retrieve_md_multi = function(items, cb)
+  if U.is_empty_str(U.target_org) then
+    return U.show_err("Target_org empty!")
+  end
+  U.get_sf_root()
+
+  -- Build the -m flag string: -m "Type1:Name1" -m "Type2:Name2"
+  local m_params = {}
+  for _, item in ipairs(items) do
+    local type_name = string.format('"%s:%s"', item.type, item.name)
+    table.insert(m_params, "-m " .. type_name)
+  end
+  local m_param_str = table.concat(m_params, " ")
+
+  local cmd = B:new():cmd("project"):act("retrieve start"):addParamStr(m_param_str):build()
+  T.run(cmd, cb)
+end
+
 H.list_md_to_retrieve = function()
   if U.is_empty_str(U.target_org) then
     return U.show_err("Target_org empty!")
@@ -110,9 +132,26 @@ H.list_md_to_retrieve = function()
   require("fzf-lua").fzf_exec(md_names, {
     actions = {
       ["default"] = function(selected)
-        H.retrieve_md(md[selected[1]]["type"], md[selected[1]]["fullName"], function()
-          H.open_apex(md[selected[1]]["fullName"])
-        end)
+        if #selected == 1 then
+          -- Single selection: existing behavior (retrieves and opens file)
+          H.retrieve_md(md[selected[1]]["type"], md[selected[1]]["fullName"], function()
+            H.open_apex(md[selected[1]]["fullName"])
+          end)
+        else
+          -- Multi-selection: batch retrieve with notification
+          local items = {}
+          for _, sel in ipairs(selected) do
+            table.insert(items, {
+              type = md[sel]["type"],
+              name = md[sel]["fullName"],
+            })
+          end
+
+          H.retrieve_md_multi(items, function()
+            local count = #items
+            U.show(string.format("Retrieved %d metadata item%s", count, count > 1 and "s" or ""))
+          end)
+        end
       end,
     },
     winopts = {
@@ -121,6 +160,9 @@ H.list_md_to_retrieve = function()
         hidden = false,
         vertical = "down:50%",
       },
+    },
+    fzf_opts = {
+      ["--multi"] = true,
     },
     preview = function(items)
       local contents = {}
