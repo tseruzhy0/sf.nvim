@@ -4,6 +4,15 @@ local Term = {}
 local H = {}
 local t
 
+local function ensure_target_org()
+  U.ensure_target_org()
+  if U.is_empty_str(U.target_org) then
+    U.show_err("Target_org empty!")
+    return false
+  end
+  return true
+end
+
 -- this function is called in config.lua if terminal type is set to 'integrated'
 -- it's meant to delay the raw term initialization so the term_cfg is ready after user's setup() call
 ---@param term_cfg table
@@ -26,8 +35,8 @@ function Term.open()
 end
 
 function Term.save_and_push(extra_params)
-  if U.is_empty_str(U.target_org) then
-    return U.show_err("Target_org empty!")
+  if not ensure_target_org() then
+    return
   end
 
   vim.api.nvim_command("write!")
@@ -41,8 +50,8 @@ function Term.save_and_push(extra_params)
 end
 
 function Term.push_delta(extra_params)
-  if U.is_empty_str(U.target_org) then
-    return U.show_err("Target_org empty!")
+  if not ensure_target_org() then
+    return
   end
 
   local cmd_builder = B:new():cmd("project"):act("deploy start")
@@ -54,8 +63,8 @@ function Term.push_delta(extra_params)
 end
 
 function Term.retrieve(extra_params)
-  if U.is_empty_str(U.target_org) then
-    return U.show_err("Target_org empty!")
+  if not ensure_target_org() then
+    return
   end
 
   local filename = vim.fn.expandcmd("%:p")
@@ -72,8 +81,8 @@ function Term.retrieve(extra_params)
 end
 
 function Term.retrieve_delta(extra_params)
-  if U.is_empty_str(U.target_org) then
-    return U.show_err("Target_org empty!")
+  if not ensure_target_org() then
+    return
   end
 
   local cmd_builder = B:new():cmd("project"):act("retrieve start")
@@ -85,8 +94,8 @@ function Term.retrieve_delta(extra_params)
 end
 
 function Term.retrieve_package()
-  if U.is_empty_str(U.target_org) then
-    return U.show_err("Target_org empty!")
+  if not ensure_target_org() then
+    return
   end
   -- local cmd = vim.fn.expandcmd('sf project retrieve start -x "%:p" -o ') .. U.get()
   local cmd = B:new():cmd("project"):act("retrieve start"):addParams("-x", "%:p"):build()
@@ -94,8 +103,8 @@ function Term.retrieve_package()
 end
 
 function Term.run_anonymous_stdin(use_selection)
-  if U.is_empty_str(U.target_org) then
-    return U.show_err("Target_org empty!")
+  if not ensure_target_org() then
+    return
   end
 
   local text
@@ -121,8 +130,8 @@ function Term.run_anonymous_stdin(use_selection)
 end
 
 function Term.run_anonymous()
-  if U.is_empty_str(U.target_org) then
-    return U.show_err("Target_org empty!")
+  if not ensure_target_org() then
+    return
   end
   -- local cmd = vim.fn.expandcmd('sf apex run -f "%:p" -o ') .. U.get()
   local cmd = B:new():cmd("apex"):act("run"):addParams("-f", "%:p"):build()
@@ -130,8 +139,8 @@ function Term.run_anonymous()
 end
 
 function Term.run_query()
-  if U.is_empty_str(U.target_org) then
-    return U.show_err("Target_org empty!")
+  if not ensure_target_org() then
+    return
   end
   -- local cmd = vim.fn.expandcmd('sf data query -f "%:p" -o ') .. U.get()
   local cmd = B:new():cmd("data"):act("query"):addParams("-f", "%:p"):build()
@@ -139,8 +148,8 @@ function Term.run_query()
 end
 
 function Term.run_tooling_query()
-  if U.is_empty_str(U.target_org) then
-    return U.show_err("Target_org empty!")
+  if not ensure_target_org() then
+    return
   end
   -- local cmd = vim.fn.expandcmd('sf data query -t -f "%:p" -o ') .. U.get()
   local cmd =
@@ -149,8 +158,8 @@ function Term.run_tooling_query()
 end
 
 function Term.run_highlighted_soql()
-  if U.is_empty_str(U.target_org) then
-    return U.show_err("Target_org empty!")
+  if not ensure_target_org() then
+    return
   end
   if vim.fn.mode() ~= "v" then
     vim.notify("Not in normal visual mode per character.", vim.log.levels.WARN)

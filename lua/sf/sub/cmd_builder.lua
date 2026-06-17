@@ -15,6 +15,7 @@ CommandBuilder.__index = CommandBuilder
 ---@param base_command string|nil
 ---@return CommandBuilder
 function CommandBuilder:new(base_command)
+  U.ensure_target_org()
   local obj = setmetatable({
     base_cmd = base_command or "sf",
     command = "",
@@ -114,6 +115,10 @@ end
 
 ---Validate the command
 function CommandBuilder:validate()
+  if self.require_org and U.is_empty_str(self.org) then
+    self.org = U.ensure_target_org()
+  end
+
   local required_fields = {
     { field = "command", message = '"command" property not set' },
     { field = "action", message = '"action" property not set' },

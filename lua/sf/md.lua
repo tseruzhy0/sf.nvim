@@ -4,6 +4,15 @@ local P = require("sf.project")
 local B = require("sf.sub.cmd_builder")
 local H = {}
 
+local function ensure_target_org()
+  U.ensure_target_org()
+  if U.is_empty_str(U.target_org) then
+    U.show_err("Target_org empty!")
+    return false
+  end
+  return true
+end
+
 local Md = {}
 
 function Md.pull_md_json()
@@ -69,8 +78,8 @@ end
 ---@param cb function
 ---@return nil
 H.retrieve_md = function(type, name, cb)
-  if U.is_empty_str(U.target_org) then
-    return U.show_err("Target_org empty!")
+  if not ensure_target_org() then
+    return
   end
   U.get_sf_root()
 
@@ -102,8 +111,8 @@ H.retrieve_md_multi = function(items, cb)
 end
 
 H.list_md_to_retrieve = function()
-  if U.is_empty_str(U.target_org) then
-    return U.show_err("Target_org empty!")
+  if not ensure_target_org() then
+    return
   end
 
   if not U.is_installed("fzf-lua") then
@@ -175,8 +184,8 @@ H.list_md_to_retrieve = function()
 end
 
 H.pull_md_json = function()
-  if U.is_empty_str(U.target_org) then
-    return U.show_err("Target_org empty!")
+  if not ensure_target_org() then
+    return
   end
   local md_types = vim.g.sf.types_to_retrieve
   for _, type in pairs(md_types) do
@@ -187,8 +196,8 @@ end
 ---@param type string
 ---@return nil
 H.pull_metadata = function(type)
-  if U.is_empty_str(U.target_org) then
-    return U.show_err("Target_org empty!")
+  if not ensure_target_org() then
+    return
   end
 
   U.create_plugin_folder_if_not_exist()
@@ -204,8 +213,8 @@ H.pull_metadata = function(type)
 end
 
 H.pull_md_type_json = function()
-  if U.is_empty_str(U.target_org) then
-    return U.show_err("Target_org empty!")
+  if not ensure_target_org() then
+    return
   end
 
   U.create_plugin_folder_if_not_exist()
@@ -220,8 +229,8 @@ H.pull_md_type_json = function()
 end
 
 H.list_md_type_to_retrieve = function()
-  if U.is_empty_str(U.target_org) then
-    return U.show_err("Target_org empty!")
+  if not ensure_target_org() then
+    return
   end
 
   if not U.is_installed("fzf-lua") then
@@ -257,8 +266,8 @@ end
 ---@param type string
 ---@return nil
 H.retrieve_md_type = function(type)
-  if U.is_empty_str(U.target_org) then
-    return U.show_err("Target_org empty!")
+  if not ensure_target_org() then
+    return
   end
 
   U.get_sf_root()

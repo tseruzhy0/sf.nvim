@@ -45,6 +45,7 @@ end
 -- helpers;
 
 H.pull_log = function()
+  U.ensure_target_org()
   if U.is_empty_str(U.target_org) then
     return U.show_err("Target_org empty!")
   end
@@ -211,6 +212,7 @@ H.fetch_org_list = function()
 end
 
 H.diff_in_target_org = function()
+  U.ensure_target_org()
   if U.is_empty_str(U.target_org) then
     return U.show_err("Target_org empty!")
   end

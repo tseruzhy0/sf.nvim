@@ -48,6 +48,52 @@ local TYPE_MAPPING = {
   complexvalue = "Object",
 }
 
+local function log_path()
+  return vim.fn.stdpath("state") .. "/sf.nvim-sobject.log"
+end
+
+---@param entry table
+local function log_sobject_error(entry)
+  entry.time = os.date("!%Y-%m-%dT%H:%M:%SZ")
+  local path = log_path()
+  pcall(vim.fn.mkdir, vim.fs.dirname(path), "p")
+
+  local ok, line = pcall(vim.json.encode, entry)
+  if not ok then
+    line = vim.inspect(entry)
+  end
+
+  local file = io.open(path, "a")
+  if not file then
+    return
+  end
+  file:write(line .. "\n")
+  file:close()
+end
+
+---@param res table|nil
+---@return table
+local function describe_failure_details(res)
+  if type(res) ~= "table" then
+    return {}
+  end
+
+  local details = { statusCode = res.statusCode }
+  if type(res.result) == "table" then
+    details.result = res.result
+    if res.result[1] then
+      details.errorCode = res.result[1].errorCode
+      details.message = res.result[1].message
+    else
+      details.errorCode = res.result.errorCode
+      details.message = res.result.message
+    end
+  elseif res.result ~= nil and res.result ~= vim.NIL then
+    details.result = tostring(res.result)
+  end
+  return details
+end
+
 ---@param s string
 local function capitalize(s)
   if #s == 0 then
@@ -292,7 +338,7 @@ local function get_org_info(org, cb)
       return cb(nil, "Failed to get org info. Is the org authenticated?")
     end
     local ok, parsed = pcall(vim.json.decode, obj.stdout)
-    if not ok or type(parsed) ~= "table" or not parsed.result or not parsed.result.accessToken then
+    if not ok or type(parsed) ~= "table" or not parsed.result then
       return cb(nil, "Failed to parse org info.")
     end
     cb(parsed.result)
@@ -317,47 +363,75 @@ end
 ---@param org_info table
 ---@param api_version string
 ---@param names string[]
----@param cb fun(describes: table[]|nil, err: string|nil, failed_count: integer|nil)
+---@param cb fun(describes: table[]|nil, err: string|nil, failed_count: integer|nil, failures: table[]|nil)
 local function describe_batch(org_info, api_version, names, cb)
   local batch_requests = {}
   for _, n in ipairs(names) do
     table.insert(batch_requests, { method = "GET", url = api_version .. "/sobjects/" .. n .. "/describe" })
   end
   local body = vim.json.encode({ batchRequests = batch_requests })
-  local endpoint = org_info.instanceUrl .. "/services/data/" .. api_version .. "/composite/batch"
+  local endpoint = "/services/data/" .. api_version .. "/composite/batch"
   local cmd = {
-    "curl",
-    "-s",
-    "-S",
-    "-f",
-    "-X",
-    "POST",
+    "sf",
+    "api",
+    "request",
+    "rest",
     endpoint,
-    "-H",
-    "Authorization: Bearer " .. org_info.accessToken,
-    "-H",
-    "Content-Type: application/json",
-    "--data-binary",
-    "@-",
+    "--target-org",
+    org_info.username,
+    "--method",
+    "POST",
+    "--body",
+    body,
   }
-  run(cmd, { stdin = body }, function(obj)
+  run(cmd, nil, function(obj)
     if obj.code ~= 0 then
-      return cb(nil, "composite/batch curl failed (exit " .. obj.code .. "): " .. (obj.stderr or ""))
+      log_sobject_error({
+        event = "composite_batch_api_request_failed",
+        endpoint = endpoint,
+        apiVersion = api_version,
+        instanceUrl = org_info.instanceUrl,
+        orgUsername = org_info.username,
+        exitCode = obj.code,
+        stderr = obj.stderr,
+        stdout = obj.stdout,
+        names = names,
+      })
+      return cb(nil, "composite/batch sf api request failed (exit " .. obj.code .. "): " .. (obj.stderr or ""))
     end
     local ok, parsed = pcall(vim.json.decode, obj.stdout)
     if not ok or type(parsed) ~= "table" or not parsed.results then
+      log_sobject_error({
+        event = "composite_batch_parse_failed",
+        endpoint = endpoint,
+        apiVersion = api_version,
+        instanceUrl = org_info.instanceUrl,
+        orgUsername = org_info.username,
+        stdout = obj.stdout,
+        names = names,
+      })
       return cb(nil, "Failed to parse composite/batch response.")
     end
     local describes = {}
     local failed = 0
-    for _, res in ipairs(parsed.results) do
+    local failures = {}
+    for i, res in ipairs(parsed.results) do
       if res.statusCode == 200 and type(res.result) == "table" then
         table.insert(describes, res.result)
       else
         failed = failed + 1
+        local details = describe_failure_details(res)
+        details.name = names[i]
+        details.event = "sobject_describe_failed"
+        details.endpoint = endpoint
+        details.apiVersion = api_version
+        details.instanceUrl = org_info.instanceUrl
+        details.orgUsername = org_info.username
+        table.insert(failures, details)
+        log_sobject_error(details)
       end
     end
-    cb(describes, nil, failed > 0 and failed or nil)
+    cb(describes, nil, failed > 0 and failed or nil, #failures > 0 and failures or nil)
   end)
 end
 
@@ -407,9 +481,6 @@ end
 function Sobject.refresh(opts)
   opts = opts or {}
   U.is_sf_cmd_installed()
-  if vim.fn.executable("curl") ~= 1 then
-    return U.show_err("curl is required for sObject refresh.")
-  end
 
   local category = string.upper(opts.category or "ALL")
   if category ~= "ALL" and category ~= "STANDARD" and category ~= "CUSTOM" then
@@ -418,6 +489,7 @@ function Sobject.refresh(opts)
 
   local org = opts.org
   if not org or org == "" then
+    U.ensure_target_org()
     if U.is_empty_str(U.target_org) then
       return U.show_warn("No target org set. Run `:SF org setTarget` first.")
     end
@@ -508,7 +580,7 @@ function Sobject.refresh(opts)
             string.format(
               "sObject refresh finished with %d batch error(s): %s",
               errors,
-              table.concat(batch_errors, "; ")
+              table.concat(batch_errors, "; ") .. ". Details logged to " .. log_path()
             )
           )
         else
@@ -528,7 +600,7 @@ function Sobject.refresh(opts)
           local idx = next_batch
           next_batch = next_batch + 1
           in_flight = in_flight + 1
-          describe_batch(org_info, api_version, batches[idx], function(describes, batch_err, failed_count)
+          describe_batch(org_info, api_version, batches[idx], function(describes, batch_err, failed_count, failures)
             in_flight = in_flight - 1
             if batch_err then
               errors = errors + 1
@@ -536,7 +608,15 @@ function Sobject.refresh(opts)
             else
               if failed_count then
                 errors = errors + failed_count
-                table.insert(batch_errors, failed_count .. " item(s) in batch " .. idx .. " failed")
+                local failed_names = {}
+                for _, failure in ipairs(failures or {}) do
+                  table.insert(failed_names, failure.name or "<unknown>")
+                  if #failed_names == 3 then
+                    break
+                  end
+                end
+                local suffix = #failed_names > 0 and " (" .. table.concat(failed_names, ", ") .. ")" or ""
+                table.insert(batch_errors, failed_count .. " item(s) in batch " .. idx .. " failed" .. suffix)
               end
               if describes then
                 for _, desc in ipairs(describes) do

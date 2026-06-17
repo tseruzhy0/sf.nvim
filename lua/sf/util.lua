@@ -26,11 +26,46 @@ M.notify_then_error = function(msg)
 end
 
 M.get = function()
+  M.ensure_target_org()
   if M.is_empty_str(M.target_org) then
     error("Sf: Target_org empty!")
   end
 
   return M.target_org
+end
+
+M.ensure_target_org = function()
+  if not M.is_empty_str(M.target_org) then
+    return M.target_org
+  end
+  if vim.fn.executable("sf") ~= 1 then
+    return nil
+  end
+
+  local opts = { text = true }
+  local ok, root = pcall(M.get_sf_root)
+  if ok and not M.is_empty_str(root) then
+    opts.cwd = root
+  end
+
+  local obj = vim.system({ "sf", "config", "get", "target-org", "--json" }, opts):wait()
+  if obj.code ~= 0 then
+    return nil
+  end
+
+  local parsed_ok, parsed = pcall(vim.json.decode, obj.stdout)
+  if not parsed_ok or type(parsed) ~= "table" or type(parsed.result) ~= "table" then
+    return nil
+  end
+
+  for _, item in ipairs(parsed.result) do
+    if item.key == "target-org" and item.success and not M.is_empty_str(item.value) then
+      M.target_org = item.value
+      return M.target_org
+    end
+  end
+
+  return nil
 end
 
 M.str_ends_with = function(str, ending)
