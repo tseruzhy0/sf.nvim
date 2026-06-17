@@ -30,4 +30,13 @@ end
 --   expect.error(function() child.lua([[M.get()]]) end)
 -- end
 
+T["set_global_target_org"] = new_set()
+
+T["set_global_target_org"]["does not open selector when org list is empty"] = function()
+  child.lua([[
+    vim.ui.select = function() error("must not be called") end
+    M.set_global_target_org()
+  ]])
+end
+
 return T

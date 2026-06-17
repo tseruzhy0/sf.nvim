@@ -129,7 +129,9 @@ H.clean_org_cache = function()
 end
 
 H.set_target_org = function()
-  U.is_table_empty(H.orgs)
+  if vim.tbl_isempty(H.orgs) then
+    return U.show_err("No orgs available. Run :SF org list first.")
+  end
   vim.ui.select(H.orgs, {
     prompt = "Local target_org:",
   }, function(choice)
@@ -147,8 +149,8 @@ H.set_target_org = function()
 end
 
 H.set_global_target_org = function()
-  if U.is_empty_str(H.orgs) then
-    U.notify_then_error("Empty value")
+  if vim.tbl_isempty(H.orgs) then
+    return U.show_err("No orgs available. Run :SF org list first.")
   end
 
   vim.ui.select(H.orgs, {
@@ -190,8 +192,6 @@ H.store_orgs = function(data)
     local org_entry = v.isScratch and "[S] " .. alias or alias
     table.insert(H.orgs, org_entry)
   end
-
-  U.is_table_empty(H.orgs)
 end
 
 H.fetch_and_store_orgs = function()
@@ -219,7 +219,9 @@ H.diff_in_target_org = function()
 end
 
 H.diff_in_org = function()
-  U.is_table_empty(H.orgs)
+  if vim.tbl_isempty(H.orgs) then
+    return U.show_err("No orgs available. Run :SF org list first.")
+  end
 
   vim.ui.select(H.orgs, {
     prompt = "Select org to diff in:",
@@ -253,15 +255,48 @@ H.diff_in = function(org)
       :set_org(org)
       :build()
 
-  local msg = "Retrive success: " .. org
-  local err_msg = "Retrive failed: " .. org
-  local cb = function()
-    local temp_file = H.find_file(temp_path, file_name)
-    vim.cmd("vert diffsplit " .. temp_file)
-    vim.bo[0].buflisted = false
-  end
+  local stdout_data = {}
+  vim.fn.jobstart(cmd, {
+    stdout_buffered = true,
+    on_stdout = function(_, data)
+      vim.list_extend(stdout_data, data)
+    end,
+    on_exit = function(_, code)
+      if code ~= 0 then
+        return U.show_err("Retrieve failed: " .. org)
+      end
 
-  U.silent_job_call(cmd, msg, err_msg, cb)
+      local json_str = table.concat(stdout_data, "\n")
+      local ok, parsed = pcall(vim.fn.json_decode, json_str)
+      if not ok or not parsed then
+        return U.show_err("Retrieve failed: could not parse sf CLI output")
+      end
+
+      local files = (parsed.result or {}).files or {}
+      local retrieved_file = nil
+      for _, f in ipairs(files) do
+        if f.state == "Failed" then
+          return U.show_err("Retrieve failed: " .. (f.error or "unknown error"))
+        end
+        if f.filePath and vim.fn.fnamemodify(f.filePath, ":t") == file_name then
+          retrieved_file = f.filePath
+        end
+      end
+
+      -- fallback for edge cases where filePath doesn't match directly
+      if not retrieved_file then
+        retrieved_file = H.find_file(temp_path, file_name)
+      end
+
+      if not retrieved_file then
+        return U.show_err("Retrieve succeeded but file not found locally")
+      end
+
+      vim.notify("Retrieve success: " .. org, vim.log.levels.INFO)
+      vim.cmd("vert diffsplit " .. vim.fn.fnameescape(retrieved_file))
+      vim.bo[0].buflisted = false
+    end,
+  })
 end
 
 ---@param fileName string
@@ -306,7 +341,7 @@ end
 
 ---@param path string
 ---@param target string
----@return string
+---@return string|nil
 H.find_file = function(path, target)
   local scanner = vim.loop.fs_scandir(path)
   -- if scanner is nil, then path is not a valid dir
